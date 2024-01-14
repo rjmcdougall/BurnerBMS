@@ -1,0 +1,1048 @@
+const INTERNALWARNINGCODE = {
+    NoWarning: 0,
+    ModuleInconsistantBypassVoltage: 1,
+    ModuleInconsistantBypassTemperature: 2,
+    ModuleInconsistantCodeVersion: 3,
+    ModuleInconsistantBoardRevision: 4,
+    LoggingEnabledNoSDCard: 5
+}
+Object.freeze(INTERNALWARNINGCODE);
+
+const INTERNALERRORCODE =
+{
+    NoError: 0,
+    CommunicationsError: 1,
+    ModuleCountMismatch: 2,
+    TooManyModules: 3,
+    WaitingForModulesToReply: 4,
+    ZeroVoltModule: 5,
+    ControllerMemoryError: 6
+
+};
+Object.freeze(INTERNALERRORCODE);
+
+
+function switchPage(newPage) {
+    $(".page").hide();
+    $(newPage).show();
+    $("#myNav").height("0%");
+}
+
+
+function configureModule(button, cellid, attempts) {
+    $('#loading').show();
+
+    //Select correct row in table
+    $(button).parent().parent().parent().find(".selected").removeClass("selected");
+    $(button).parent().parent().addClass("selected");
+
+    $.getJSON("modules.json", { c: cellid },
+        function (data) {
+            var div = $("#settingConfig .settings");
+            $('#c').val(data.settings.id);
+            $('#m').val(data.settings.id);
+
+            if (data.settings.Cached == true) {
+                var currentReading = parseFloat($("#modulesRows > tr.selected > td:nth-child(3)").text());
+                $("#ActualVoltage").val(currentReading.toFixed(3));
+
+                $("#settingConfig h2").html("Settings for module bank:" + data.settings.bank + " module:" + data.settings.module);
+
+                //Populate settings div
+                $('#ModuleId').val(data.settings.id);
+                $('#Version').html(data.settings.ver.toString() + ' / <a href="https://github.com/stuartpittaway/diyBMSv4Code/commit/' + data.settings.code.toString(16) + '" rel="noreferrer" target="_blank">' + data.settings.code.toString(16) + '</a>');
+                $('#BypassOverTempShutdown').val(data.settings.BypassOverTempShutdown);
+                $('#BypassThresholdmV').val(data.settings.BypassThresholdmV);
+                $('#Calib').val(data.settings.Calib.toFixed(4));
+                $('#ExtBCoef').val(data.settings.ExtBCoef);
+                $('#IntBCoef').val(data.settings.IntBCoef);
+                $('#LoadRes').val(data.settings.LoadRes.toFixed(2));
+                $('#mVPerADC').val(data.settings.mVPerADC.toFixed(2));
+
+                $("#settingConfig").show();
+                $('#loading').hide();
+            } else {
+                //Data not ready yet, we will have to try again soon
+                $('#settingConfig').hide();
+
+                if (attempts > 0) {
+                    //Call back to refresh page, only try for a limited number of attempts
+                    attempts--;
+                    setTimeout(configureModule, 1500, button, cellid, attempts);
+                }
+            }
+        }).fail(function () {
+            $("#iperror").show();
+        });
+}
+
+
+function queryBMS() {
+    $.getJSON("monitor2.json", function (jsondata) {
+        var labels = [];
+        var cells = [];
+        var bank = [];
+        var voltages = [];
+        var voltagesmin = [];
+        var voltagesmax = [];
+        var tempint = [];
+        var tempext = [];
+        var pwm = [];
+
+        var minVoltage = DEFAULT_GRAPH_MIN_VOLTAGE;
+        var maxVoltage = DEFAULT_GRAPH_MAX_VOLTAGE;
+
+        var bankNumber = 0;
+        var cellsInBank = 0;
+
+        // Need one color for each pack, could make it colourful I suppose :-)
+        const colours = [
+            '#55a1ea', '#33628f', '#55a1ea', '#33628f',
+            '#55a1ea', '#33628f', '#55a1ea', '#33628f',
+            '#55a1ea', '#33628f', '#55a1ea', '#33628f',
+            '#55a1ea', '#33628f', '#55a1ea', '#33628f',
+        ]
+
+        const red = '#B44247'
+
+        var markLineData = [];
+
+        markLineData.push({ name: 'avg', type: 'average', lineStyle: { color: '#ddd', width: 2, type: 'dotted', opacity: 0.3 }, label: { distance: [10, 0], position: 'start' } });
+        markLineData.push({ name: 'min', type: 'min', lineStyle: { color: '#ddd', width: 2, type: 'dotted', opacity: 0.3 }, label: { distance: [10, 0], position: 'start' } });
+        markLineData.push({ name: 'max', type: 'max', lineStyle: { color: '#ddd', width: 2, type: 'dotted', opacity: 0.3 }, label: { distance: [10, 0], position: 'start' } });
+
+        var xAxis = 0;
+        for (let index = 0; index < jsondata.banks; index++) {
+            markLineData.push({ name: "Bank " + index, xAxis: xAxis });
+            xAxis += jsondata.seriesmodules;
+        }
+
+        if (jsondata.voltages) {
+            for (let i = 0; i < jsondata.voltages.length; i++) {
+                labels.push(bankNumber + "/" + i);
+
+                // Make different banks different colours (stripes)
+                var stdcolor = colours[bankNumber];
+                // Red
+                var color = jsondata.bypass[i] == 1 ? red : stdcolor;
+
+                var v = (parseFloat(jsondata.voltages[i]) / 1000.0);
+                voltages.push({ value: v, itemStyle: { color: color } });
+
+                //Auto scale graph is outside of normal bounds
+                if (v > maxVoltage) { maxVoltage = v; }
+                if (v < minVoltage) { minVoltage = v; }
+
+                if (jsondata.minvoltages) {
+                    voltagesmin.push((parseFloat(jsondata.minvoltages[i]) / 1000.0));
+                }
+                if (jsondata.maxvoltages) {
+                    voltagesmax.push((parseFloat(jsondata.maxvoltages[i]) / 1000.0));
+                }
+
+                bank.push(bankNumber);
+                cells.push(i);
+
+
+                cellsInBank++;
+                if (cellsInBank == jsondata.seriesmodules) {
+                    cellsInBank = 0;
+                    bankNumber++;
+                }
+
+                color = stdcolor; //jsondata.bypasshot[i] == 1 ? red : stdcolor;
+                tempint.push({ value: jsondata.inttemp[i], itemStyle: { color: color } });
+                tempext.push({ value: (jsondata.exttemp[i] == -40 ? 0 : jsondata.exttemp[i]), itemStyle: { color: stdcolor } });
+                pwm.push({ value: 0 });
+            }
+        }
+
+        //Scale down for low voltages
+        if (minVoltage < 2.5) { minVoltage = 0; }
+
+        if (jsondata.bankv) {
+            for (var bankNumber = 0; bankNumber < jsondata.bankv.length; bankNumber++) {
+                $("#voltage" + bankNumber + " .v").html((parseFloat(jsondata.bankv[bankNumber]) / 1000.0).toFixed(2) + "V");
+                $("#current" + bankNumber + " .v").html((parseFloat(jsondata.currentMa[bankNumber]) / 1000.0).toFixed(3) + "A");
+                $("#range" + bankNumber + " .v").html(jsondata.voltrange[bankNumber] + "mV");
+                $("#soc" + bankNumber + " .v").html(jsondata.soc[bankNumber] + "%");
+                $("#soh" + bankNumber + " .v").html(jsondata.soh[bankNumber] + "%");
+                $("#remainingCapacityAh" + bankNumber + " .v").html((parseFloat(jsondata.remainingCapacityMah[bankNumber]) / 1000.0).toFixed(1) + "AH");
+                $("#fullChargeCapacityAh" + bankNumber + " .v").html((parseFloat(jsondata.fullChargeCapacityMah[bankNumber]) / 1000.0).toFixed(1) + "AH");
+                $("#voltage" + bankNumber).show();
+                $("#current" + bankNumber).show();
+                $("#range" + bankNumber).show();
+                $("#soc" + bankNumber).show();
+                $("#soh" + bankNumber).show();
+                $("#remainingCapacityAh" + bankNumber).show();
+                $("#fullChargeCapacityAh" + bankNumber).show();
+                //$("#bank" + (bankNumber )).show();
+            }
+
+            for (var bankNumber = jsondata.bankv.length; bankNumber < MAXIMUM_NUMBER_OF_BANKS; bankNumber++) {
+                //$("#bank" + (bankNumber )).hide();
+                $("#voltage" + bankNumber).hide();
+                $("#current" + bankNumber).hide();
+                $("#range" + bankNumber).hide();
+                $("#soc" + bankNumber).hide();
+                $("#soh" + bankNumber).hide();
+                $("#remainingCapacityAh" + bankNumber).hide();
+                $("#fullChargeCapacityAh" + bankNumber).hide();
+            }
+        }
+
+        //Not currently supported
+        /*
+        if (jsondata.current) {
+            if (jsondata.current[0] == null) {
+                $("#current").hide();
+            } else {
+                $("#current .v").html((parseFloat(jsondata.current[0]) / 1000.0).toFixed(2));
+                $("#current").show();
+            }
+        }
+        */
+
+        //Needs increasing when more warnings are added
+        if (jsondata.warnings) {
+            for (let warning = 1; warning <= 5; warning++) {
+                if (jsondata.warnings.includes(warning)) {
+                    $("#warning" + warning).show();
+                } else {
+                    $("#warning" + warning).hide();
+                }
+            }
+        }
+
+        //Needs increasing when more errors are added
+        if (jsondata.errors) {
+            for (let error = 1; error <= 6; error++) {
+                if (jsondata.errors.includes(error)) {
+                    $("#error" + error).show();
+
+                    if (error == INTERNALERRORCODE.ModuleCountMismatch) {
+                        $("#missingmodule1").html(jsondata.modulesfnd);
+                        $("#missingmodule2").html(jsondata.banks * jsondata.seriesmodules);
+                    }
+                } else {
+                    $("#error" + error).hide();
+                }
+            }
+        }
+
+        $("#info").show();
+        $("#iperror").hide();
+
+        if ($('#modulesPage').is(':visible')) {
+            //The modules page is visible
+            var tbody = $("#modulesRows");
+
+            if ($('#modulesRows tr').length != cells.length) {
+                $("#settingConfig").hide();
+
+                //Add rows if they dont exist (or incorrect amount)
+                $(tbody).find("tr").remove();
+
+                $.each(cells, function (index, value) {
+                    $(tbody).append("<tr><td>"
+                        + bank[index]
+                        + "</td><td>" + value + "</td><td></td><td class='hide'></td><td class='hide'></td>"
+                        + "<td class='hide'></td><td class='hide'></td><td class='hide'></td><td class='hide'></td><td class='hide'></td><td class='hide'></td>"
+                        + "<td><button type='button' onclick='return identifyModule(this," + index + ");'>Identify</button>"
+                        + "<button type='button' onclick='return configureModule(this," + index + ",10);'>Configure</button></td></tr>")
+                });
+            }
+
+            var rows = $(tbody).find("tr");
+
+            $.each(cells, function (index, value) {
+                var columns = $(rows[index]).find("td");
+                $(columns[2]).html(voltages[index].value.toFixed(3));
+                if (voltagesmin.length > 0) {
+                    $(columns[3]).html(voltagesmin[index].toFixed(3));
+                } else {
+                    $(columns[3]).html("n/a");
+                }
+                if (voltagesmax.length > 0) {
+                    $(columns[4]).html(voltagesmax[index].toFixed(3));
+                } else {
+                    $(columns[4]).html("n/a");
+                }
+                $(columns[5]).html(tempint[index].value);
+                $(columns[6]).html(tempext[index].value);
+                $(columns[7]).html(pwm[index].value);
+            });
+
+            //As the module page is open, we refresh the last 3 columns using seperate JSON web service to keep the monitor2.json
+            //packets as small as possible
+
+            $.getJSON("monitor3.json", function (jsondata) {
+                var tbody = $("#modulesRows");
+                var rows = $(tbody).find("tr");
+                $.each(cells, function (index, value) {
+                    var columns = $(rows[index]).find("td");
+                    $(columns[10]).html(jsondata.balcurrent[index]);
+                });
+            });
+        }
+
+
+        if ($('#homePage').is(':visible')) {
+            if (window.g1 == null && $('#graph1').css('display') != 'none') {
+                // based on prepared DOM, initialize echarts instance
+                window.g1 = echarts.init(document.getElementById('graph1'))
+
+                // specify chart configuration item and data
+                var option = {
+                    tooltip: {
+                        show: true,
+                        axisPointer: {
+                            type: 'cross',
+                            label: {
+                                backgroundColor: '#6a7985'
+                            }
+                        }
+                    },
+                    legend: {
+                        show: false
+                    },
+                    xAxis: [{
+                        gridIndex: 0,
+                        type: 'category',
+                        axisLine: {
+                            lineStyle: {
+                                color: '#c1bdbd'
+                            }
+                        }
+                    }, {
+                        gridIndex: 1,
+                        type: 'category',
+                        axisLine: {
+                            lineStyle: {
+                                color: '#c1bdbd'
+                            }
+                        }
+                    }],
+                    yAxis: [{
+                        id: 0,
+                        gridIndex: 0,
+                        name: 'Volts',
+                        type: 'value',
+                        min: 2.5,
+                        max: 4.5,
+                        interval: 0.25,
+                        position: 'left',
+                        axisLine: {
+                            lineStyle: {
+                                color: '#c1bdbd'
+                            }
+                        },
+                        axisLabel: {
+                            formatter: function (value, index) {
+                                return value.toFixed(2);
+                            }
+                        }
+                    },
+                    {
+                        id: 1,
+                        gridIndex: 0,
+                        name: 'Bypass',
+                        type: 'value',
+                        min: 0,
+                        max: 100,
+                        interval: 10,
+                        position: 'right',
+                        axisLabel: { formatter: '{value}%' },
+                        splitLine: { show: false },
+                        axisLine: { lineStyle: { type: 'dotted', color: '#c1bdbd' } },
+                        axisTick: { show: false }
+                    },
+                    {
+                        id: 2,
+                        gridIndex: 1,
+                        name: 'Temperature',
+                        type: 'value',
+                        interval: 10,
+                        position: 'left',
+                        axisLine: {
+                            lineStyle: {
+                                color: '#c1bdbd'
+                            }
+                        },
+                        axisLabel: {
+                            formatter: '{value}°C'
+                        }
+                    }],
+                    series: [
+                        {
+                            xAxisIndex: 0,
+                            name: 'Voltage',
+                            yAxisIndex: 0,
+                            type: 'bar',
+                            data: [],
+
+                            markLine: {
+                                silent: true,
+                                symbol: 'none',
+                                lineStyle: { width: 5, type: 'dashed', opacity: 0.1 },
+                                label: { show: true, distance: [0, 0], formatter: '{b}' },
+                                data: markLineData
+                            },
+                            itemStyle: { color: '#55a1ea', barBorderRadius: [8, 8, 0, 0] },
+                            label: {
+                                normal: {
+                                    show: true,
+                                    position: 'insideBottom',
+                                    distance: 10,
+                                    align: 'left',
+                                    verticalAlign: 'middle',
+                                    rotate: 90,
+                                    formatter: '{c}V',
+                                    fontSize: 24,
+                                    color: '#eeeeee',
+                                    fontFamily: 'Fira Code'
+                                }
+                            }
+                        }, {
+                            xAxisIndex: 0,
+                            name: 'Min V',
+                            yAxisIndex: 0,
+                            type: 'line',
+                            data: [],
+                            label: {
+                                normal: {
+                                    show: true,
+                                    position: 'bottom',
+                                    distance: 5,
+                                    formatter: '{c}V',
+                                    fontSize: 14,
+                                    color: '#eeeeee',
+                                    fontFamily: 'Fira Code'
+                                }
+                            },
+                            symbolSize: 16,
+                            symbol: ['circle'],
+                            itemStyle: {
+                                normal: {
+                                    color: "#c1bdbd",
+                                    lineStyle: {
+                                        color: 'transparent'
+                                    }
+                                }
+                            }
+                        }
+                        , {
+                            xAxisIndex: 0,
+                            name: 'Max V',
+                            yAxisIndex: 0,
+                            type: 'line',
+                            data: [],
+                            label: {
+                                normal: {
+                                    show: true,
+                                    position: 'top',
+                                    distance: 5,
+                                    formatter: '{c}V',
+                                    fontSize: 14,
+                                    color: '#c1bdbd',
+                                    fontFamily: 'Fira Code'
+                                }
+                            },
+                            symbolSize: 16,
+                            symbol: ['arrow'],
+                            itemStyle: {
+                                normal: {
+                                    color: "#c1bdbd",
+                                    lineStyle: {
+                                        color: 'transparent'
+                                    }
+                                }
+                            }
+                        }
+
+                        , {
+                            xAxisIndex: 0,
+                            name: 'Bypass',
+                            yAxisIndex: 1,
+                            type: 'line',
+                            data: [],
+                            label: {
+                                normal: {
+                                    show: true,
+                                    position: 'right',
+                                    distance: 5,
+                                    formatter: '{c}%',
+                                    fontSize: 14,
+                                    color: '#f0e400',
+                                    fontFamily: 'Fira Code'
+                                }
+                            },
+                            symbolSize: 16,
+                            symbol: ['square'],
+                            itemStyle: { normal: { color: "#f0e400", lineStyle: { color: 'transparent' } } }
+                        }
+
+                        , {
+                            xAxisIndex: 1,
+                            yAxisIndex: 2,
+                            name: 'BypassTemperature',
+                            type: 'bar',
+                            data: [],
+                            itemStyle: {
+                                color: '#55a1ea',
+                                barBorderRadius: [8, 8, 0, 0]
+                            },
+                            label: {
+                                normal: {
+                                    show: true,
+                                    position: 'insideBottom',
+                                    distance: 8,
+                                    align: 'left',
+                                    verticalAlign: 'middle',
+                                    rotate: 90,
+                                    formatter: '{c}°C',
+                                    fontSize: 20,
+                                    color: '#eeeeee',
+                                    fontFamily: 'Fira Code'
+                                }
+                            }
+                        }
+
+                        , {
+                            xAxisIndex: 1,
+                            yAxisIndex: 2,
+                            name: 'CellTemperature',
+                            type: 'bar',
+                            data: [],
+                            itemStyle: {
+                                color: '#55a1ea',
+                                barBorderRadius: [8, 8, 0, 0]
+                            },
+                            label: {
+                                normal: {
+                                    show: true,
+                                    position: 'insideBottom',
+                                    distance: 8,
+                                    align: 'left',
+                                    verticalAlign: 'middle',
+                                    rotate: 90,
+                                    formatter: '{c}°C',
+                                    fontSize: 20,
+                                    color: '#eeeeee',
+                                    fontFamily: 'Fira Code'
+                                }
+                            }
+
+                        }
+                    ],
+                    grid: [
+                        {
+                            containLabel: false,
+                            left: '4%',
+                            right: '4%',
+                            bottom: '30%'
+
+                        }, {
+                            containLabel: false,
+                            left: '4%',
+                            right: '4%',
+                            top: '76%'
+                        }]
+                };
+
+                // use configuration item and data specified to show chart
+                g1.setOption(option);
+
+            }
+
+            if (window.g2 == null && $('#graph2').css('display') != 'none') {
+                window.g2 = echarts.init(document.getElementById('graph2'));
+
+                var Option3dBar = {
+                    tooltip: {},
+                    visualMap: { max: 4, inRange: { color: ['#313695', '#4575b4', '#74add1', '#abd9e9', '#e0f3f8', '#ffffbf', '#fee090', '#fdae61', '#f46d43', '#d73027', '#a50026'] } },
+                    xAxis3D: { type: 'category', data: [], name: 'Cell', nameTextStyle: { color: '#ffffff' } },
+                    yAxis3D: { type: 'category', data: [], name: 'Bank', nameTextStyle: { color: '#ffffff' } },
+                    zAxis3D: { type: 'value', name: 'Voltage', nameTextStyle: { color: '#ffffff' } },
+                    grid3D: {
+                        boxWidth: 200,
+                        boxDepth: 80,
+                        viewControl: {
+                            // projection: 'orthographic'
+                        },
+                        light: {
+                            main: {
+                                intensity: 1.2,
+                                shadow: true
+                            },
+                            ambient: {
+                                intensity: 0.3
+                            }
+                        }
+                    },
+                    series: [{
+                        type: 'bar3D',
+                        data: [],
+                        shading: 'lambert',
+                        label: { textStyle: { fontSize: 16, borderWidth: 1, color: '#ffffff' } },
+
+                        emphasis: {
+                            label: {
+                                textStyle: {
+                                    fontSize: 16,
+                                    color: '#aaa'
+                                }
+                            },
+                            itemStyle: { color: '#fff' }
+                        }
+                    }]
+                };
+
+                g2.setOption(Option3dBar);
+            }
+
+
+            if (window.g1 != null && $('#graph1').css('display') != 'none') {
+                g1.setOption({
+                    markLine: { data: markLineData },
+                    xAxis: { data: labels },
+                    yAxis: [{ gridIndex: 0, min: minVoltage, max: maxVoltage }]
+                    , series: [{ name: 'Voltage', data: voltages }
+                        , { name: 'Min V', data: voltagesmin }
+                        , { name: 'Max V', data: voltagesmax }
+                        , { name: 'Bypass', data: pwm }
+                        , { name: 'BypassTemperature', data: tempint }
+                        , { name: 'CellTemperature', data: tempint }]
+                });
+            }
+
+
+
+            if (window.g2 != null && $('#graph2').css('display') != 'none') {
+                //Format the data to show as 3D Bar chart
+                var cells3d = [];
+                var banks3d = [];
+
+                for (var seriesmodules = 0; seriesmodules < jsondata.seriesmodules; seriesmodules++) {
+                    cells3d.push({ value: 'Cell ' + seriesmodules, textStyle: { color: '#ffffff' } });
+                }
+
+                var data3d = [];
+                var cell = 0;
+                for (var bankNumber = 0; bankNumber < jsondata.banks; bankNumber++) {
+                    banks3d.push({ value: 'Bank ' + bankNumber, textStyle: { color: '#ffffff' } });
+                    //Build up 3d array for cell data
+                    for (var seriesmodules = 0; seriesmodules < jsondata.seriesmodules; seriesmodules++) {
+                        data3d.push({ value: [seriesmodules, bankNumber, voltages[cell].value], itemStyle: voltages[cell].itemStyle });
+                        cell++;
+                    }
+                }
+
+                g2.setOption({
+                    xAxis3D: { data: cells3d },
+                    yAxis3D: { data: banks3d },
+                    zAxis3D: { min: minVoltage, max: maxVoltage },
+                    series: [{ data: data3d }]
+
+                    , grid3D: {
+                        boxWidth: 20 * jsondata.seriesmodules > 200 ? 200 : 20 * jsondata.seriesmodules,
+                        boxDepth: 20 * jsondata.banks > 100 ? 100 : 20 * jsondata.banks
+                    }
+                }
+
+                );
+            }
+
+        }//end homepage visible
+
+        $("#homePage").css({ opacity: 1.0 });
+        $("#loading").hide();
+        //Call again in a few seconds
+        setTimeout(queryBMS, 4000);
+
+    }).fail(function () {
+        $("#iperror").show();
+        //Try again in a few seconds (2 seconds if errored)
+        setTimeout(queryBMS, 2000);
+        $("#loading").hide();
+        //Dim the main home page graph
+        $("#homePage").css({ opacity: 0.1 });
+    });
+}
+
+$(window).on('resize', function () {
+    if (g1 != null && g1 != undefined && $('#homePage').is(':visible')) { g1.resize(); }
+    if (g2 != null && g2 != undefined && $('#homePage').is(':visible')) { g2.resize(); }
+});
+
+
+
+
+$(function () {
+    $("#loading").show();
+    $("#avrprogconfirm").hide();
+
+    $("#more").on("click"
+        , function (e) {
+            e.preventDefault();
+            $("#myNav").height("90%");
+        });
+
+    $("#closebtn").on("click"
+        , function (e) {
+            e.preventDefault();
+            $("#myNav").height("0%");
+        });
+
+    //Populate all the setting rules with relay select lists
+    $.each($(".settings table tbody tr td:empty"), function (index, value) {
+        $.each([1, 2, 3, 4], function (index1, relay) {
+            $(value).append('<select id="rule' + (index + 1) + 'relay' + relay + '" name="rule' + (index + 1) + 'relay' + relay + '"><option>On</option><option>Off</option><option>X</option></select>');
+        });
+    }
+    );
+
+    for (var n = 1; n <= 32; n++) {
+        $("#totalSeriesModules").append('<option>' + n + '</option>')
+    }
+    for (var n = MAXIMUM_NUMBER_OF_BANKS - 1; n >= 0; n--) {
+        $("#totalBanks").prepend('<option>' + (n + 1) + '</option>')
+        $("#info").prepend('<div id="remainingCapacityAh' + n + '" class="stat"><span class="x t">Remaining ' + n + ':</span><span class="x v"></span></div>');
+        $("#info").prepend('<div id="fullChargeCapacityAh' + n + '" class="stat"><span class="x t">FCC' + n + ':</span><span class="x v"></span></div>');
+        $("#info").prepend('<div id="soc' + n + '" class="stat"><span class="x t">Level ' + n + ':</span><span class="x v"></span></div>');
+        $("#info").prepend('<div id="soh' + n + '" class="stat"><span class="x t">Health ' + n + ':</span><span class="x v"></span></div>');
+        $("#info").prepend('<div id="range' + n + '" class="stat"><span class="x t">Range ' + n + ':</span><span class="x v"></span></div>');
+        $("#info").prepend('<div id="voltage' + n + '" class="stat"><span class="x t">Voltage ' + n + ':</span><span class="x v"></span></div>');
+        $("#info").prepend('<div id="current' + n + '" class="stat"><span class="x t">Current ' + n + ':</span><span class="x v"></span></div>');
+
+        $("#voltage" + n).hide();
+        $("#current" + n).hide();
+        $("#range" + n).hide();
+        $("#soc" + n).hide();
+        $("#soh" + n).hide();
+        $("#remainingCapacityAh" + n).hide();
+        $("#fullChargeCapacityAh" + n).hide();
+    }
+
+
+
+    $("#graph1").show();
+    $("#graph2").hide();
+    $("#graphOptions a").click(function (event) {
+        event.preventDefault();
+        if ($(event.target).text() == "2D") {
+            $("#graph1").show();
+            $("#graph2").hide();
+
+            //Hide 3d graph
+            //if (window.g2 != null) {window.g2.clear();            }
+        } else {
+            $("#graph1").hide();
+            $("#graph2").show();
+
+            //Hide 2d graph
+            //if (window.g1 != null) {window.g1.clear();            }
+        }
+        $(window).trigger('resize');
+    });
+
+
+
+    $('#CalculateCalibration').click(function () {
+        var currentReading = parseFloat($("#modulesRows > tr.selected > td:nth-child(3)").text());
+        var currentCalib = parseFloat($("#Calib").val());
+        var actualV = parseFloat($("#ActualVoltage").val());
+        var result = (currentCalib / currentReading) * actualV;
+        $("#Calib").val(result.toFixed(4));
+        return true;
+    });
+
+    $("#home").click(function () {
+        $(".header-right a").removeClass("active");
+        $(this).addClass("active");
+        switchPage("#homePage");
+        return true;
+    });
+
+    $("#about").click(function () {
+        $(".header-right a").removeClass("active");
+        $(this).addClass("active");
+        switchPage("#aboutPage");
+
+        $.getJSON("settings.json",
+            function (data) {
+                $("#MinFreeHeap").html(data.settings.MinFreeHeap);
+                $("#FreeHeap").html(data.settings.FreeHeap);
+                $("#HeapSize").html(data.settings.HeapSize);
+                $("#SdkVersion").html(data.settings.SdkVersion);                
+                $("#HostName").html("<a href='http://" + data.settings.HostName + "'>" + data.settings.HostName + "</a>");
+            }).fail(function () { }
+            );
+
+        return true;
+    });
+
+    $("#modules").click(function () {
+        $("#loading").show();
+
+        $(".header-right a").removeClass("active");
+        $(this).addClass("active");
+        //Remove existing table
+        $("#modulesRows").find("tr").remove();
+
+        $("#settingConfig").hide();
+
+        switchPage("#modulesPage");
+
+        $.getJSON("settings.json",
+            function (data) {
+                $("#g1").val(data.settings.bypassovertemp);
+                $("#g2").val(data.settings.bypassthreshold);
+
+                $("#modulesPage").show();
+            }).fail(function () { }
+            );
+        return true;
+    });
+
+
+
+    $("#settings").click(function () {
+        $(".header-right a").removeClass("active");
+        $(this).addClass("active");
+
+        $("#banksForm").hide();
+        $("#settingsPage").show();
+
+        $("#VoltageHigh").val(DEFAULT_GRAPH_MAX_VOLTAGE.toFixed(2));
+        $("#VoltageLow").val(DEFAULT_GRAPH_MIN_VOLTAGE.toFixed(2));
+
+        switchPage("#settingsPage");
+
+        $.getJSON("settings.json",
+            function (data) {
+
+                $("#NTPServer").val(data.settings.NTPServerName);
+                $("#NTPZoneHour").val(data.settings.TimeZone);
+                $("#NTPZoneMin").val(data.settings.MinutesTimeZone);
+                $("#NTPDST").prop("checked", data.settings.DST);
+
+                var d = new Date(1000 * data.settings.now);
+                $("#timenow").html(d.toJSON());
+
+                $("#totalSeriesModules").val(data.settings.totalseriesmodules);
+                $("#totalBanks").val(data.settings.totalnumberofbanks);
+
+                $("#banksForm").show();
+            }).fail(function () { }
+            );
+
+        return true;
+    });
+
+
+ 
+
+    $("#integration").click(function () {
+        $(".header-right a").removeClass("active");
+        $(this).addClass("active");
+
+        switchPage("#integrationPage");
+
+        $("#mqttForm").hide();
+        $("#influxForm").hide();
+
+        $.getJSON("integration.json",
+            function (data) {
+
+                $("#mqttEnabled").prop("checked", data.mqtt.enabled);
+                $("#mqttTopic").val(data.mqtt.topic);
+                $("#mqttServer").val(data.mqtt.server);
+                $("#mqttPort").val(data.mqtt.port);
+                $("#mqttUsername").val(data.mqtt.username);
+                $("#mqttPassword").val("");
+
+                $("#influxEnabled").prop("checked", data.influxdb.enabled);
+                $("#influxServer").val(data.influxdb.server);
+                $("#influxPort").val(data.influxdb.port);
+                $("#influxDatabase").val(data.influxdb.database);
+                $("#influxUsername").val(data.influxdb.username);
+                $("#influxPassword").val("");
+
+                $("#mqttForm").show();
+                $("#influxForm").show();
+            }).fail(function () { }
+            );
+
+        return true;
+    });
+
+
+    $("#mount").click(function () {
+        $.ajax({
+            type: 'post',
+            url: 'sdmount.json',
+            data: 'mount=1',
+            success: function (data) {
+                //Refresh the storage page
+                $("#storage").trigger("click");
+            },
+            error: function (data) {
+                $("#saveerror").show().delay(2000).fadeOut(500);
+            },
+        });
+    });
+
+    $("#unmount").click(function () {
+        $.ajax({
+            type: 'post',
+            url: 'sdunmount.json',
+            data: 'unmount=1',
+            success: function (data) {
+                //Refresh the storage page
+                $("#storage").trigger("click");
+            },
+            error: function (data) {
+                $("#saveerror").show().delay(2000).fadeOut(500);
+            },
+        });
+    });
+
+
+
+    $("#storage").click(function () {
+        $(".header-right a").removeClass("active");
+        $(this).addClass("active");
+        switchPage("#storagePage");
+
+        $.getJSON("storage.json",
+            function (data) {
+                $("#loggingEnabled").prop("checked", data.storage.logging);
+                $("#loggingFreq").val(data.storage.frequency);
+
+                if (data.storage.sdcard.available) {
+                    $("#sdcardmissing").hide();
+                } else { $("#sdcardmissing").show(); }
+
+                $("#sdcard_total").html(Number(data.storage.sdcard.total).toLocaleString());
+                $("#sdcard_used").html(Number(data.storage.sdcard.used).toLocaleString());
+
+                if (data.storage.sdcard.total > 0) {
+                    $("#sdcard_used_percent").html(((data.storage.sdcard.used / data.storage.sdcard.total) * 100).toFixed(1));
+                }
+                else { $("#sdcard_used_percent").html("0"); }
+
+                $("#sdcardfiles").empty();
+                if (data.storage.sdcard.files) {
+                    $.each(data.storage.sdcard.files, function (index, value) {
+                        if (value != null) {
+                            $("#sdcardfiles").append("<li><a href='download?type=sdcard&file=" + encodeURI(value) + "'>" + value + "</a></li>");
+                        }
+                    });
+                }
+
+                $("#flash_total").html(Number(data.storage.flash.total).toLocaleString());
+                $("#flash_used").html(Number(data.storage.flash.used).toLocaleString());
+
+                if (data.storage.flash.total > 0) {
+                    $("#flash_used_percent").html(((data.storage.flash.used / data.storage.flash.total) * 100).toFixed(1));
+                }
+                else { $("#flash_used_percent").html("0"); }
+
+                $("#flashfiles").empty();
+                if (data.storage.flash.files) {
+                    $.each(data.storage.flash.files, function (index, value) {
+                        if (value != null) {
+                            $("#flashfiles").append("<li><a href='download?type=flash&file=" + encodeURI(value) + "'>" + value + "</a></li>");
+                        }
+                    });
+                }
+
+            }).fail(function () { }
+            );
+
+        return true;
+    });
+
+
+    $("form").unbind('submit').submit(function (e) {
+        e.preventDefault();
+
+        $.ajax({
+            type: $(this).attr('method'),
+            url: $(this).attr('action'),
+            data: $(this).serialize(),
+            success: function (data) {
+                $("#savesuccess").show().delay(2000).fadeOut(500);
+            },
+            error: function (data) {
+                $("#saveerror").show().delay(2000).fadeOut(500);
+            },
+        });
+    });
+
+    $("#settingsForm").unbind('submit').submit(function (e) {
+        e.preventDefault();
+
+        $.ajax({
+            type: $(this).attr('method'),
+            url: $(this).attr('action'),
+            data: $(this).serialize(),
+            success: function (data) {
+                $('#settingConfig').hide();
+                $("#savesuccess").show().delay(2000).fadeOut(500);
+            },
+            error: function (data) {
+                $("#saveerror").show().delay(2000).fadeOut(500);
+            },
+        });
+    });
+
+    $("#displaySettingForm").unbind('submit').submit(function (e) {
+        e.preventDefault();
+
+        $.ajax({
+            type: $(this).attr('method'),
+            url: $(this).attr('action'),
+            data: $(this).serialize(),
+            success: function (data) {
+                DEFAULT_GRAPH_MAX_VOLTAGE = parseFloat($("#VoltageHigh").val());
+                DEFAULT_GRAPH_MIN_VOLTAGE = parseFloat($("#VoltageLow").val());
+                $("#savesuccess").show().delay(2000).fadeOut(500);
+            },
+            error: function (data) {
+                $("#saveerror").show().delay(2000).fadeOut(500);
+            },
+        });
+    });
+
+
+
+    $("#mqttEnabled").change(function () {
+        if ($(this).is(":checked")) {
+            $("#mqttForm").removeAttr("novalidate");
+        } else {
+            $("#mqttForm").attr("novalidate", "");
+        }
+    });
+
+    $("#influxEnabled").change(function () {
+        if ($(this).is(":checked")) {
+            $("#influxForm").removeAttr("novalidate");
+        } else {
+            $("#influxForm").attr("novalidate", "");
+        }
+    });
+
+    $.ajaxSetup({
+        beforeSend: function (xhr, settings) { settings.data += '&xss=' + XSS_KEY; }
+    });
+
+    //$(document).ajaxStart(function(){ });
+    //$(document).ajaxStop(function(){ });
+
+    $("#homePage").show();
+
+    //On page ready
+    queryBMS();
+});
