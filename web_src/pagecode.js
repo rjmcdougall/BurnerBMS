@@ -88,6 +88,7 @@ function queryBMS() {
         var tempint = [];
         var tempext = [];
         var pwm = [];
+        var balanceMah = [];
 
         var minVoltage = DEFAULT_GRAPH_MIN_VOLTAGE;
         var maxVoltage = DEFAULT_GRAPH_MAX_VOLTAGE;
@@ -153,7 +154,7 @@ function queryBMS() {
                 color = stdcolor; //jsondata.bypasshot[i] == 1 ? red : stdcolor;
                 tempint.push({ value: jsondata.inttemp[i], itemStyle: { color: color } });
                 tempext.push({ value: (jsondata.exttemp[i] == -40 ? 0 : jsondata.exttemp[i]), itemStyle: { color: stdcolor } });
-                pwm.push({ value: 0 });
+                balanceMah.push({ value: jsondata.balanceMah[i], itemStyle: { color: stdcolor } });
             }
         }
 
@@ -270,7 +271,7 @@ function queryBMS() {
                 }
                 $(columns[5]).html(tempint[index].value);
                 $(columns[6]).html(tempext[index].value);
-                $(columns[7]).html(pwm[index].value);
+                $(columns[7]).html(balanceMah[index].value);
             });
 
             //As the module page is open, we refresh the last 3 columns using seperate JSON web service to keep the monitor2.json
@@ -612,7 +613,7 @@ function queryBMS() {
                         , { name: 'Max V', data: voltagesmax }
                         , { name: 'Bypass', data: pwm }
                         , { name: 'BypassTemperature', data: tempint }
-                        , { name: 'CellTemperature', data: tempint }]
+                        , { name: 'CellTemperature', data: tempext }]
                 });
             }
 

@@ -188,17 +188,14 @@ void WebServerSupervisor::PrintStream(AsyncResponseStream *response, const char 
 }
 
 void WebServerSupervisor::monitor2(AsyncWebServerRequest *request)
-{
-
-  bms.update(); 
-  
+{  
   uint8_t totalcells = bms.getNumberCells();
   const char comma = ',';
   const char *null = "null";
   BLog_d(TAG, "monitor2");
 
   AsyncResponseStream *response = request->beginResponseStream("application/json");
-
+  
   PrintStreamComma(response, "{\"banks\":", 1);
   PrintStreamComma(response, "\"seriescells\":", totalcells);
 
@@ -281,6 +278,19 @@ void WebServerSupervisor::monitor2(AsyncWebServerRequest *request)
 
   response->print(comma);
 
+// balanceMah
+  response->print(F("\"balanceMah\":["));
+
+  for (uint8_t i = 0; i < totalcells; i++)
+  {
+    // Comma if not zero
+    if (i)
+      response->print(comma);
+    response->print(bms.getCellBalanceMah(i));
+  }
+  response->print("]");
+  response->print(comma);
+
   // bypass
   response->print(F("\"bypass\":["));
 
@@ -347,7 +357,7 @@ void WebServerSupervisor::monitor3(AsyncWebServerRequest *request)
 
   for (uint8_t i = 0; i < totalModules; i++)
   {
-    response->print(bms.getCellBalanceCurrentCount(i));
+    response->print(bms.getCellBalanceMah(i));
     if (i < comma)
     {
       response->print(',');

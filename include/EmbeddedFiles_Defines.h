@@ -13,8 +13,8 @@ static const uint16_t GIT_VERSION_B1 = 0xFFFF;
 
 static const uint16_t GIT_VERSION_B2 = 0xFFFF;
 
-static const char COMPILE_DATE_TIME[] = "2024-01-14T21:19:24.041Z";
+static const char COMPILE_DATE_TIME[] = "2024-01-20T22:37:55.052Z";
 
-static const char COMPILE_DATE_TIME_SHORT[] = "14 Jan 2024 21:19";
+static const char COMPILE_DATE_TIME_SHORT[] = "20 Jan 2024 22:37";
 
 #endif

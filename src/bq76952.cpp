@@ -1,8 +1,16 @@
 // TODO:
 // - automatically read the current multiplier and apply
+// Get most important safety conditions (over temp, over-current, CUV, COV)
+// Get is_charging()
+// deal with negative currents
+// make thermisters work
+// allow ui to calibrate voltage and current  
 
 #include "bq76952.h"
 static const char *TAG = "bq76952";
+
+#undef BLog_d
+#define BLog_d
 
 // Library config
 #define BQ_I2C_FREQ 100000
@@ -135,70 +143,12 @@ bq76952::bq76952()
 
 void bq76952::begin(void)
 {
-  BLog_d(TAG, "Releasing M5 external I2C...");
-  // If using Wire library on M5, first need to release the external port from M5's library
-  m5::I2C_Class *m5_i2c_class = &M5.Ex_I2C;
-  m5_i2c_class->release();
-  BLog_d(TAG, "Initializing Wire external port...");
-  Wire1.end();
-  Wire1.setPins(32, 33); // Core2 External
-  Wire1.begin();
-  Wire1.setClock(10000);
-  // BLog_d(TAG, "Wire timeout %d", Wire1.getTimeout());
-  // Wire1.setTimeout(500);
-  // BLog_d(TAG, "Wire timeout %d", Wire1.getTimeout());
-  BLog_d(TAG, "Initializing BQ76952...");
-  //::cellMv = new uint32_t[20];
+
 }
 
-uint32_t bq76952::cellMv[16];
-;
-uint32_t bq76952::cellIsBalancing[16];
-uint32_t bq76952::cellBalancingMs[16];
-uint32_t bq76952::cellTempMin;
-uint32_t bq76952::cellTempMax;
-uint32_t bq76952::chipTemp;
-uint32_t bq76952::bmsTemp;
 
-uint32_t bq76952::voltageMultiplier = 10;
-uint32_t bq76952::currentMultiplier = 10;
 
-bool bq76952::update()
-{
-  BLog_d(TAG, "update");
-  // Additional 3 to read top of stack voltages
-  uint32_t cells[19];
-  bool cellBalanceStatus[16];
-  uint32_t cellBalanceTimes[16];
-  BLog_d(TAG, "reading bq mode");
-  uint32_t mode = getVcellMode();
-  // BLog_d(TAG, "bq mode = %x", mode);
-  getAllCellVoltages(&cells[0]);
-  // getCellBalanceStatus(&cellBalanceStatus[0]);
-  // getCellBalanceTimes(&cellBalanceTimes[0]);
-  int configuredCell = 0;
-  for (int i = 0; i < 16; i++)
-  {
-    // BLog_d(TAG, "bq cell = %d", i);
-    if ((mode & (1 << i)) == false)
-    {
-      // i++;
-      continue;
-    }
-    BLog_d(TAG, "cell %i (bq cell %i) %d mv", configuredCell, i, cells[i]); // - cellptr->BalanceCurrentCount);
-    // BLog_d(TAG, "cell %i (bq cell %i) %d mv, %d balance (%d)", configuredCell, i, cells[i], cellBalanceTimes[i], cellBalanceStatus[i]); // - cellptr->BalanceCurrentCount);
-    if (cells[i] > 0)
-    {
-      cellMv[configuredCell] = cells[i];
-      // Estimate 25ma cell balance current * seconds of balancing
-      // cellBalancingMs[configuredCell] = cellBalanceTimes[i] * 25 / 3600;
-      // cellIsBalancing[configuredCell] = cellBalanceStatus[i];
-    }
-    configuredCell++;
-  }
-  BLog_d(TAG, "bq cells = %d", configuredCell);
-  return true;
-}
+
 
 // Send Direct command
 // readRegister16()
@@ -308,23 +258,24 @@ bool bq76952::subCommandResponseBlock(uint8_t *data, uint16_t len)
 
   BLog_d(TAG, "BQsubCommandResponseBlock Send");
 
-  // vTaskDelay(pdMS_TO_TICKS(10));
-
-  for (int i = 0; i < ret_len; i++)
-  {
+  vTaskDelay(pdMS_TO_TICKS(2));
     Wire1.beginTransmission(BQ_I2C_ADDR_WRITE);
     Wire1.write(CMD_DIR_RESP_START);
     Wire1.endTransmission();
     vTaskDelay(pdMS_TO_TICKS(2));
-    if (Wire1.requestFrom(BQ_I2C_ADDR_READ, 1) != 1)
+    if (Wire1.requestFrom(BQ_I2C_ADDR_READ, ret_len) != ret_len)
     {
-      BLog_d(TAG, "subCommandResponseBlock CMD_DIR_RESP_START + %d  failed", i);
+      BLog_d(TAG, "subCommandResponseBlock CMD_DIR_RESP_START  failed");
       return false;
     }
     vTaskDelay(pdMS_TO_TICKS(10));
+  for (int i = 0; i < ret_len; i++)
+  {
+
+    data[i] = Wire1.read();
     BLog_d(TAG, "BQsubCommandResponseBlock data %x", data[i]);
   }
-  vTaskDelay(pdMS_TO_TICKS(2));
+  //vTaskDelay(pdMS_TO_TICKS(2));
   BLog_d(TAG, "BQsubCommandResponseBlock done");
   return true;
 }
@@ -424,30 +375,15 @@ void bq76952::exitConfigUpdate(void)
 // Read single cell voltage
 uint32_t bq76952::getCellVoltageMv(int cellNumber)
 {
-  BLog_d(TAG, "getCellVoltageMv %d", cellNumber);
-  return cellMv[cellNumber];
-}
-
-// Read single cell voltage
-uint32_t bq76952::getCellVoltageInternalMv(int cellNumber)
-{
   uint16_t value;
   return directCommand(CELL_NO_TO_ADDR(cellNumber));
-}
-
-// Read All cell voltages in given array - Call like readAllCellVoltages(&myArray)
-void bq76952::getAllCellVoltages(uint32_t *cellArray)
-{
-  // Additional 3 to read top of stack voltages
-  for (int x = 0; x < 19; x++)
-    //  for(uint8_t x=1;x<2;x++)
-    cellArray[x] = getCellVoltageInternalMv(x);
 }
 
 // Get Cell Balancing Status per cell
 void bq76952::getCellBalanceStatus(bool *cellArray)
 {
   subCommand(CB_ACTIVE_CELLS);
+  vTaskDelay(pdMS_TO_TICKS(20));
   uint16_t status = subCommandResponseInt();
   // BLog_d(TAG," CB_ACTIVE_CELLS status %x", status);
   for (int i = 0; i < 16; i++)
@@ -460,17 +396,29 @@ void bq76952::getCellBalanceStatus(bool *cellArray)
 void bq76952::getCellBalanceTimes(uint32_t *cellArray)
 {
 
-  uint32_t buffer[32];
+  uint32_t buffer[9]; // response block always has +4 bytes
+  int cell = 0;
 
   subCommand(CB_STATUS2);
+  vTaskDelay(pdMS_TO_TICKS(20));
   subCommandResponseBlock((uint8_t *)&buffer[0], 32);
-  // for (int i = 0; i < 8; i++) {
-  //     BLog_d(TAG," balance: %x", buffer[i]);
-  // }
-  memcpy((uint8_t *)cellArray, &buffer[0], 32);
+  for (int i = 0; i < 8; i++) {
+       BLog_d(TAG," balance: %d = %x", cell, buffer[i]);
+       cellArray[cell] = buffer[i];
+       cell++;
+  }
+  //memcpy((uint8_t *)cellArray, &buffer[0], 32);
+  vTaskDelay(pdMS_TO_TICKS(2));
   subCommand(CB_STATUS3);
+  vTaskDelay(pdMS_TO_TICKS(20));
   subCommandResponseBlock((uint8_t *)&buffer[0], 32);
-  memcpy(cellArray + 8, &buffer[0], 32);
+  for (int i = 0; i < 8; i++) {
+       BLog_d(TAG," balance: %d = %x", cell, buffer[i]);
+       cellArray[cell] = buffer[i];
+       cell++;
+  }
+  //memcpy((uint8_t *)(cellArray + 8), &buffer[0], 32);
+  vTaskDelay(pdMS_TO_TICKS(2));
   return;
 }
 
@@ -479,13 +427,13 @@ void bq76952::getCellBalanceTimes(uint32_t *cellArray)
 
 uint32_t bq76952::getVoltageMv()
 {
-  return (bq76952::voltageMultiplier * bq76952::getCellVoltageInternalMv(CELL_STACK));
+  return (bq76952::getCellVoltageMv(CELL_STACK));
 }
 
 // Measure CC2 current
 uint16_t bq76952::getCurrentMa(void)
 {
-  return (bq76952::currentMultiplier * directCommand(CMD_DIR_CC2_CUR));
+  return (directCommand(CMD_DIR_CC2_CUR));
 }
 
 // Measure chip temperature in °C
@@ -507,6 +455,7 @@ float bq76952::getInternalTemp(void)
 bool bq76952::getDASTATUS5()
 {
   uint32_t value;
+  BLog_d(TAG, "CMD_DASTATUS5");
   subCommand(CMD_DASTATUS5);
   /*
    for (int i = 0; i < 10; i++) {
@@ -530,15 +479,24 @@ float bq76952::getMinCellTemp()
   return (raw - 273.15);
 }
 
+float bq76952::getFETTemp()
+{
+  float raw = (subcmdCache[DASTATUS_TEMPFET] | (subcmdCache[DASTATUS_TEMPFET + 1] << 8)) / 10.0;
+  if (raw == 0) {
+    raw = (subcmdCache[DASTATUS_TEMPCELLMIN] | (subcmdCache[DASTATUS_TEMPCELLMIN + 1] << 8)) / 10.0;
+  }
+  return (raw - 273.15);
+}
+
 uint32_t bq76952::getMaxCellVoltMv()
 {
-  float raw = (subcmdCache[DASTATUS_MAXCELL] | (subcmdCache[DASTATUS_MAXCELL + 1] << 8)) / 1000.0;
+  uint32_t raw = (subcmdCache[DASTATUS_MAXCELL] | (subcmdCache[DASTATUS_MAXCELL + 1] << 8)) ;
   return (raw);
 }
 
 uint32_t bq76952::getMinCellVoltMv()
 {
-  float raw = (subcmdCache[DASTATUS_MINCELL] | (subcmdCache[DASTATUS_MINCELL + 1] << 8)) / 1000.0;
+  uint32_t raw = (subcmdCache[DASTATUS_MINCELL] | (subcmdCache[DASTATUS_MINCELL + 1] << 8));
   return (raw);
 }
 

@@ -9,7 +9,7 @@ Import("env")
 env.Replace(PROGNAME="burnerbms_controller_firmware_%s_%s" %
             (env["PIOPLATFORM"], env["PIOENV"]))
 
-env.Replace(ESP8266_FS_IMAGE_NAME="diybms_controller_filesystemimage_%s_%s" %
+env.Replace(ESP8266_FS_IMAGE_NAME="burnerbms_filesystemimage_%s_%s" %
             (env["PIOPLATFORM"], env["PIOENV"]))
 
 env.Replace(ESP32_SPIFFS_IMAGE_NAME="burnerbms_controller_filesystemimage_%s_%s" %

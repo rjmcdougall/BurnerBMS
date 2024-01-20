@@ -3,6 +3,9 @@
 #include "burner_bms.h"
 #include <Wire.h>
 
+//#undef BLog_d
+//#define BLog_d 
+
 	enum bq76952_thermistor
 	{
 		TS1,
@@ -72,7 +75,7 @@
 			uint8_t UNDERTEMP_CHG : 1;
 		} bits;
 	} bq76952_temperature_t;
-	
+
 class bq76952
 {
 
@@ -104,9 +107,13 @@ public:
 	bool getDASTATUS5();
 	float getMaxCellTemp();
 	float getMinCellTemp();
+	float getFETTemp();
 	float getThermistorTemp(bq76952_thermistor);
 	uint32_t getMaxCellVoltMv();
 	uint32_t getMinCellVoltMv();
+	void getCellBalanceStatus(bool *cellArray);
+	void getCellBalanceTimes(uint32_t *cellArray);
+	uint32_t getVcellMode(void);
 
 	// Cache for multi-uint8_t subcommands
 	uint8_t subcmdCache[64];
@@ -123,19 +130,6 @@ private:
 	bool readDataMemory(uint16_t addr, uint8_t *data);
 	uint8_t computeChecksum(uint8_t oldChecksum, uint8_t data);
 	bool read16(uint8_t reg, uint16_t *value);
-	uint32_t getVcellMode(void);
-	void getCellBalanceStatus(bool *cellArray);
-	void getCellBalanceTimes(uint32_t *cellArray);
-	void getAllCellVoltages(uint32_t *cellArray);
-	uint32_t getCellVoltageInternalMv(int cell);
 
-	static uint32_t cellTempMin;
-	static uint32_t cellTempMax;
-	static uint32_t chipTemp;
-	static uint32_t bmsTemp;
-	static uint32_t cellMv[16];
-	static uint32_t cellIsBalancing[16];
-	static uint32_t cellBalancingMs[16];
-	static uint32_t voltageMultiplier;
-	static uint32_t currentMultiplier;
+	
 };
