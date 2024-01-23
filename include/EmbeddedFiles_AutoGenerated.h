@@ -21,49 +21,49 @@ const size_t size_file_greenArrow_png = 413;
 const char* const etag_file_logo_bmp = "\"a7b04f84\"";
 const size_t size_file_logo_bmp = 3834;
 
-const char* const etag_file_echarts_gl_min_js_gz = "\"759efdf6\"";
+const char* const etag_file_echarts_gl_min_js_gz = "\"0e43a7d2\"";
 const size_t size_file_echarts_gl_min_js_gz = 195099;
 
-const char* const etag_file_term_js_gz = "\"8f3a3ad1\"";
+const char* const etag_file_term_js_gz = "\"370d27ed\"";
 const size_t size_file_term_js_gz = 1027;
 
-const char* const etag_file_jquery_js_gz = "\"97c8d115\"";
+const char* const etag_file_jquery_js_gz = "\"c2db035e\"";
 const size_t size_file_jquery_js_gz = 30889;
 
-const char* const etag_file_echarts_min_js_gz = "\"566b65d7\"";
+const char* const etag_file_echarts_min_js_gz = "\"775a3c48\"";
 const size_t size_file_echarts_min_js_gz = 140110;
 
-const char* const etag_file_burnerbms_png = "\"80591c49\"";
+const char* const etag_file_burnerbms_png = "\"802872e5\"";
 const size_t size_file_burnerbms_png = 131087;
 
-const char* const etag_file_softap_htm = "\"22cc4ec4\"";
+const char* const etag_file_softap_htm = "\"97b525e2\"";
 const size_t size_file_softap_htm = 989;
 
-const char* const etag_file_default_htm = "\"04c6df10\"";
+const char* const etag_file_default_htm = "\"7f1c8254\"";
 const size_t size_file_default_htm = 16865;
 
-const char* const etag_file_batteryicon_jpg = "\"08ce838a\"";
+const char* const etag_file_batteryicon_jpg = "\"79f070a1\"";
 const size_t size_file_batteryicon_jpg = 21175;
 
-const char* const etag_file_favicon_ico_gz = "\"df1902e7\"";
+const char* const etag_file_favicon_ico_gz = "\"a0c61dc4\"";
 const size_t size_file_favicon_ico_gz = 7935;
 
-const char* const etag_file_logo_png = "\"033914b1\"";
+const char* const etag_file_logo_png = "\"9e90386f\"";
 const size_t size_file_logo_png = 8466;
 
-const char* const etag_file_patron_png = "\"4d2191c5\"";
+const char* const etag_file_patron_png = "\"468fb511\"";
 const size_t size_file_patron_png = 1966;
 
-const char* const etag_file_term_css_gz = "\"387f344d\"";
+const char* const etag_file_term_css_gz = "\"2435920d\"";
 const size_t size_file_term_css_gz = 468;
 
-const char* const etag_file_pagecode_js_gz = "\"6c71b848\"";
+const char* const etag_file_pagecode_js_gz = "\"cb6000aa\"";
 const size_t size_file_pagecode_js_gz = 7187;
 
-const char* const etag_file_style_css_gz = "\"6b58fb37\"";
+const char* const etag_file_style_css_gz = "\"01b492b0\"";
 const size_t size_file_style_css_gz = 1945;
 
-const char* const etag_file_wait_png = "\"1fe0064d\"";
+const char* const etag_file_wait_png = "\"c1dba54a\"";
 const size_t size_file_wait_png = 26018;
 
 #endif
