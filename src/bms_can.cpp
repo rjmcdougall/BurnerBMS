@@ -10,6 +10,9 @@ static constexpr const char *TAG = "bms_can";
 #define CAN_DEBUG 1
 
 #define CAN_ADDR 126
+#define CAN_ADDR_DIEBIE 10
+
+// TODO: Fix the send buffer allocations
 
 bms_can::bms_can()
 {
@@ -212,19 +215,20 @@ void bms_can::can_process_task()
 	}
 }
 
-void commands_send_packet(unsigned char *data, unsigned int len)
+void bms_can::commands_send_packet(unsigned char *data, unsigned int len)
 {
-	BLog_i(TAG, "CAN  send packet: \n");
+	//BLog_i(TAG, "CAN  send packet: \n");
+	can_send_buffer(rx_buffer_last_id, data, len, 1);
 }
 
 void bms_can::can_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int len, uint8_t send)
 {
 	uint8_t send_buffer[8];
-	BLog_i(TAG, "CAN  send buffer: \n");
+	//BLog_i(TAG, "CAN  send buffer: \n");
 
 	if (len <= 6)
 	{
-		//BLog_i(TAG, "CAN  send buffer short: \n");
+		// BLog_i(TAG, "CAN  send buffer short: \n");
 		uint32_t ind = 0;
 		send_buffer[ind++] = CAN_ADDR;
 		send_buffer[ind++] = send;
@@ -236,7 +240,7 @@ void bms_can::can_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int
 	}
 	else
 	{
-		//BLog_i(TAG, "CAN  send buffer long: \n");
+		// BLog_i(TAG, "CAN  send buffer long: \n");
 		unsigned int end_a = 0;
 		for (unsigned int i = 0; i < len; i += 7)
 		{
@@ -353,6 +357,32 @@ void bms_can::commands_process_packet(unsigned char *data, unsigned int len)
 
 		// reply_func(send_buffer, ind);
 		can_send_buffer(rx_buffer_last_id, send_buffer, ind, 1);
+		BLog_d(TAG, "Sent COMM_FW_VERSION to %d", rx_buffer_last_id);
+	}
+	break;
+
+	case COMM_FW_VERSION_DIEBIE:
+	{
+		// BLog_i(TAG, "CAN  process packet: COMM_FW_VERSIONDIEBIE\n");
+
+		int32_t ind = 0;
+		uint8_t send_buffer[50];
+		send_buffer[ind++] = COMM_FW_VERSION;
+		send_buffer[ind++] = DIEBIE_VERSION_MAJOR;
+		send_buffer[ind++] = DIEBIE_VERSION_MINOR;
+
+		strcpy((char *)(send_buffer + ind), DIEBIE_HW_NAME);
+		ind += strlen(HW_NAME) + 1;
+
+		uint64_t esp_chip_id[2];
+		esp_chip_id[0] = ESP.getEfuseMac();
+
+		memcpy(send_buffer + ind, &esp_chip_id[0], 12);
+		ind += 12;
+
+		// reply_func(send_buffer, ind);
+		can_send_buffer(rx_buffer_last_id, send_buffer, ind, 1);
+		BLog_d(TAG, "Sent COMM_FW_VERSION_DIEBIE to %d", rx_buffer_last_id);
 	}
 	break;
 
@@ -422,6 +452,7 @@ void bms_can::commands_process_packet(unsigned char *data, unsigned int len)
 		//		buffer_append_float32_auto(send_buffer_global, bms_if_get_ah_cnt_dis_total(), &ind);
 		//		buffer_append_float32_auto(send_buffer_global, bms_if_get_wh_cnt_dis_total(), &ind);
 		can_send_buffer(rx_buffer_last_id, send_buffer_global, ind, 1);
+		BLog_d(TAG, "Sent COMM_BMS_GET_VALUES");
 	}
 	break;
 
@@ -435,6 +466,75 @@ void bms_can::commands_process_packet(unsigned char *data, unsigned int len)
 		send_buffer_global[ind++] = packet_id;
 		buffer_append_uint32(send_buffer_global, battery_type, &ind);
 		commands_send_packet(send_buffer_global, ind);
+		BLog_d(TAG, "Sent COMM_BMS_GET_BATT_TYPE");
+	}
+	break;
+
+	// Emulate DiEBie to make metr.at happy
+	case COM_GET_BMS_CELLS_DIEBIE:
+	{
+		int32_t ind;
+		ind = 0;
+		uint8_t send_buffer_global[256];
+		send_buffer_global[ind++] = 51; // original COM_GET_BMS_CELLS = 51
+
+		send_buffer_global[ind++] = (uint8_t)bms.getNumberCells();
+
+		for (int cell = 0; cell < bms.getNumberCells(); cell++)
+		{
+			if (bms.isCellBalancing(cell))
+			{
+				buffer_append_float16(send_buffer_global, bms_if_get_v_cell(cell) * -1.0f, 1e3, &ind);
+			}
+			else
+			{
+				buffer_append_float16(send_buffer_global, bms_if_get_v_cell(cell), 1e3, &ind);
+			}
+		}
+
+		send_buffer_global[ind++] = CAN_ADDR_DIEBIE;
+		commands_send_packet(send_buffer_global, ind);
+		BLog_d(TAG, "Sent COMM_BMS_GET_CELLS_DIEBIE");
+	}
+	break;
+
+	case COMM_GET_VALUES_DIEBIE:
+	{
+		int32_t ind = 0;
+
+		uint8_t send_buffer_global[256];
+
+		send_buffer_global[ind++] = COMM_GET_VALUES;
+
+		buffer_append_float32(send_buffer_global, bms_if_get_v_tot(), 1e3, &ind);
+		buffer_append_float32(send_buffer_global, bms_if_get_i_in(), 1e3, &ind);
+		
+		send_buffer_global[ind++] = (uint8_t)(bms_if_get_soc() * 100);
+
+		buffer_append_float32(send_buffer_global, bms_if_get_v_cell_max(), 1e3, &ind);
+		buffer_append_float32(send_buffer_global, bms_if_get_v_cell_avg(), 1e3, &ind);
+		buffer_append_float32(send_buffer_global, bms_if_get_v_cell_min(), 1e3, &ind);
+		buffer_append_float32(send_buffer_global, bms_if_get_v_cell_max() - bms_if_get_v_cell_min(), 1e3, &ind);
+
+		buffer_append_float16(send_buffer_global, 0, 1e3, &ind);
+		buffer_append_float16(send_buffer_global, 0, 1e3, &ind);
+		buffer_append_float16(send_buffer_global, 0, 1e3, &ind);
+		buffer_append_float16(send_buffer_global, 0, 1e3, &ind);
+		buffer_append_float16(send_buffer_global, 0, 1e3, &ind);
+		buffer_append_float16(send_buffer_global, 0, 1e3, &ind);
+
+		buffer_append_float16(send_buffer_global, bms_if_get_temp(0), 1e1, &ind);
+		buffer_append_float16(send_buffer_global, bms_if_get_temp(1), 1e1, &ind);
+		buffer_append_float16(send_buffer_global, bms_if_get_temp_ic(), 1e1, &ind);
+		buffer_append_float16(send_buffer_global, bms_if_get_temp_ic(), 1e1, &ind);
+
+		send_buffer_global[ind++] = 0;
+		send_buffer_global[ind++] = 0;
+		send_buffer_global[ind++] = 0;
+
+		send_buffer_global[ind++] = CAN_ADDR_DIEBIE;
+		commands_send_packet(send_buffer_global, ind);
+		BLog_d(TAG, "Sent COMM_BMS_GET_VALUES_DIEBIE");
 	}
 	break;
 
@@ -442,7 +542,7 @@ void bms_can::commands_process_packet(unsigned char *data, unsigned int len)
 		uint32_t data1 = *(data++);
 		uint32_t data2 = *(data++);
 		uint32_t data3 = *(data++);
-		BLog_i(TAG, "CAN  process packet: Unknown command %d : %d %d %d\n", packet_id, data1, data2, data3);
+		BLog_i(TAG, "CAN  process packet: to id %d Unknown command %d : %d %d %d\n", rx_buffer_last_id, packet_id, data1, data2, data3);
 
 		break;
 	}
@@ -468,7 +568,28 @@ void bms_can::decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced
 	// sprintf(buffer, "CAN  %x decode id %x cmd %x\n", CAN_ADDR, id, cmd);
 	// TelnetStream.println(buffer);
 
-	if (id == 255 || id == CAN_ADDR)
+	// Emulate DieBie
+	// TODO: sends cmd 51, COMM_GET_BMS_CELLS which we remap to COM_GET_BMS_CELLS_DIEBIE
+	// TODO: maybe should also check if this is a cmd short buffer
+	if (id == CAN_ADDR_DIEBIE)
+	{
+		unsigned int packet_id = (data8[2] & 0xFF);
+		if (packet_id == COMM_FW_VERSION)
+		{
+			data8[2] = COMM_FW_VERSION_DIEBIE;
+		}
+		else if (packet_id == 51)
+		{
+			data8[2] = COM_GET_BMS_CELLS_DIEBIE;
+		}
+		else if (packet_id == COMM_GET_VALUES)
+		{
+			data8[2] = COMM_GET_VALUES_DIEBIE;
+		}
+		//BLog_i(TAG, "CAN  Diebie packet: %d:  %d %d %d\n", cmd, data8[0], data8[1], data8[2]);
+	}
+
+	if (id == 255 || id == CAN_ADDR || id == CAN_ADDR_DIEBIE)
 	//	if (id == 255 || id == 99)
 	{
 		// BLog_i(TAG, "CAN  decode 255 or me: id %x cmd %d len %d\n", id, cmd, len);
@@ -477,12 +598,12 @@ void bms_can::decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced
 		switch (cmd)
 		{
 		case CAN_PACKET_FILL_RX_BUFFER:
-			BLog_i(TAG, "CAN  decode: CAN_PACKET_FILL_RX_BUFFER\n");
+			//BLog_i(TAG, "CAN  decode: CAN_PACKET_FILL_RX_BUFFER\n");
 			memcpy(rx_buffer + data8[0], data8 + 1, len - 1);
 			break;
 
 		case CAN_PACKET_FILL_RX_BUFFER_LONG:
-			BLog_i(TAG, "CAN  decode: CAN_PACKET_FILL_RX_BUFFER_LONG\n");
+			//BLog_i(TAG, "CAN  decode: CAN_PACKET_FILL_RX_BUFFER_LONG\n");
 			rxbuf_ind = (unsigned int)data8[0] << 8;
 			rxbuf_ind |= data8[1];
 			if (rxbuf_ind < RX_BUFFER_SIZE)
@@ -824,7 +945,7 @@ void bms_can::decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced
 		break;
 
 	default:
-		// BLog_i(TAG, "CAN  decode: default\n");
+		// BLog_i(TAG, "CAN  decode: default %d\n", cmd);
 		break;
 	}
 }
@@ -952,10 +1073,10 @@ void bms_can::can_transmit_eid(uint32_t id, const uint8_t *data, int len)
 	}
 	else
 	{
-		//BLog_i(TAG, "CAN tx success id %x len %d", id, len);
+		// BLog_i(TAG, "CAN tx success id %x len %d", id, len);
 		tx_count++;
 	}
-	//BLog_i(TAG, "CAN tx end");
+	// BLog_i(TAG, "CAN tx end");
 }
 /*
 	#ifdef CAN_DEBUG
@@ -1003,25 +1124,25 @@ void bms_can::can_status_task()
 			*/
 		}
 
-		BLog_i(TAG, "can_status_task sending status v %f\n", bms_if_get_v_tot());
+		// BLog_i(TAG, "can_status_task sending status v %f\n", bms_if_get_v_tot());
 
 		buffer_append_float32_auto(buffer, bms_if_get_v_tot(), &send_index);
 		buffer_append_float32_auto(buffer, bms_if_get_v_charge(), &send_index);
 		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_V_TOT << 8), buffer, send_index);
 
-		BLog_i(TAG, "can_status_task sending status i\n");
+		// BLog_i(TAG, "can_status_task sending status i\n");
 		send_index = 0;
 		buffer_append_float32_auto(buffer, bms_if_get_i_in(), &send_index);
 		buffer_append_float32_auto(buffer, bms_if_get_i_in_ic(), &send_index);
 		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_I << 8), buffer, send_index);
 
-		BLog_i(TAG, "can_status_task sending status wh\n");
+		// BLog_i(TAG, "can_status_task sending status wh\n");
 		send_index = 0;
 		buffer_append_float32_auto(buffer, bms_if_get_ah_cnt(), &send_index);
 		buffer_append_float32_auto(buffer, bms_if_get_wh_cnt(), &send_index);
 		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_AH_WH << 8), buffer, send_index);
 
-		BLog_i(TAG, "can_status_task sending status cells\n");
+		// BLog_i(TAG, "can_status_task sending status cells\n");
 
 		int cell_now = 0;
 		int cell_max = (bms.getNumberCells());
@@ -1042,11 +1163,11 @@ void bms_can::can_status_task()
 			{
 				buffer_append_float16(buffer, bms_if_get_v_cell(cell_now++), 1e3, &send_index);
 			}
-			BLog_i(TAG, "can_status_task sending status cells %d %d\n", cell_now, cell_max);
+			// BLog_i(TAG, "can_status_task sending status cells %d %d\n", cell_now, cell_max);
 			can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_V_CELL << 8), buffer, send_index);
 		}
 
-		BLog_i(TAG, "can_status_task sending status balancing\n");
+		// BLog_i(TAG, "can_status_task sending status balancing\n");
 		send_index = 0;
 		buffer[send_index++] = bms.getNumberCells();
 		uint64_t bal_state = 0;
@@ -1063,7 +1184,7 @@ void bms_can::can_status_task()
 		buffer[send_index++] = (bal_state >> 0) & 0xFF;
 		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_BAL << 8), buffer, send_index);
 
-		BLog_i(TAG, "can_status_task sending status temp\n");
+		// BLog_i(TAG, "can_status_task sending status temp\n");
 		int temp_now = 0;
 		while (temp_now < HW_ADC_TEMP_SENSORS)
 		{
@@ -1094,7 +1215,7 @@ void bms_can::can_status_task()
 		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_HUM << 8), buffer, send_index);
 #endif
 
-		BLog_i(TAG, "can_status_task sending status cell status\n");
+		// BLog_i(TAG, "can_status_task sending status cell status\n");
 		/*
 		 * CAN_PACKET_BMS_SOC_SOH_TEMP_STAT
 		 *
@@ -1120,14 +1241,23 @@ void bms_can::can_status_task()
 			((bms_if_is_charge_allowed() ? 1 : 0) << 2);
 		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_SOC_SOH_TEMP_STAT << 8), buffer, send_index);
 
-		// DieBie Emulation
-		/*
-		send_index = 0;
+		// Diebie
 		buffer_append_float32_auto(buffer, bms_if_get_v_tot(), &send_index);
-		buffer_append_float32_auto(buffer, bms_if_get_v_charge(), &send_index);
-		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_V_TOT << 8), buffer, send_index);
+		buffer_append_float32_auto(buffer, bms_if_get_i_in(), &send_index);
+		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_STATUS_MAIN_IV << 8), buffer, send_index);
 
-		*/
+		buffer_append_float32_auto(buffer, bms_if_get_v_cell_min(), &send_index);
+		buffer_append_float32_auto(buffer, bms_if_get_v_cell_max(), &send_index);
+		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_STATUS_CELLVOLTAGE << 8), buffer, send_index);
+
+		buffer_append_float16(buffer, bms_if_get_v_tot(), 1e2, &send_index);
+		buffer_append_float16(buffer, bms.getRemainingCapacityMah() / 1000.0, 1e2, &send_index);
+		buffer[send_index++] = (uint8_t)(bms_if_get_soc() * 100.0);
+		buffer[send_index++] = (uint8_t)0;
+		buffer[send_index++] = (uint8_t)0;
+		buffer[send_index++] = (uint8_t)0;
+		can_transmit_eid(CAN_ADDR | ((uint32_t)CAN_PACKET_BMS_STATUS_THROTTLE_CH_DISCH_BOOL << 8), buffer, send_index);
+
 		// TODO: allow config
 		int32_t sleep_time = 1000 / 1;
 		if (sleep_time == 0)
@@ -1216,6 +1346,11 @@ float bms_can::bms_if_get_v_cell_min()
 float bms_can::bms_if_get_v_cell_max()
 {
 	return (float)bms.getCellVoltageMaxMv(0) / 1000.0;
+}
+
+float bms_can::bms_if_get_v_cell_avg()
+{
+	return (float)bms.getVoltageMv() * 1000.0 / bms.getNumberCells();
 }
 
 float bms_can::bms_if_get_humidity_sensor_temp()

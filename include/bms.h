@@ -2,6 +2,7 @@
 
 #include "bq76952.h"
 #include "bq34z100g1.h"
+#include <map>
 
 
 typedef enum bms_error {
@@ -51,6 +52,7 @@ public:
     static int getChargeVoltage();
     static bool isCharging();
     static bool isBalancing();
+    static std::map<std::string, int> getBqzDiagData();
 
 private:
 	static void getAllCellVoltages(uint32_t *cellArray, uint32_t mode);
@@ -79,6 +81,7 @@ private:
     static uint32_t currentInstantMa;
     static uint32_t chargeVoltage;
     static bool isChargingState;
+    static std::map<std::string, int> bqzDiagData;
 };
 
 extern BMS bms;

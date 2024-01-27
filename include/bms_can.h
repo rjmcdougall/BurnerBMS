@@ -6,9 +6,17 @@
 
 // Firmware version
 #define FW_VERSION_MAJOR			6
-#define FW_VERSION_MINOR			00
+#define FW_VERSION_MINOR			02
 // Set to 0 for building a release and iterate during beta test builds
 #define FW_TEST_VERSION_NUMBER		0
+
+// Hardware name
+#define DIEBIE_HW_NAME "DieBieMS"
+
+// Firmware version
+#define DIEBIE_VERSION_MAJOR		0
+#define DIEBIE_VERSION_MINOR		21
+#define DIEBIE_REAL_VERSION			"V0.21"
 
 // Settings
 #define PACKET_MAX_PL_LEN 512
@@ -331,7 +339,22 @@ typedef enum {
 
 	COMM_BMS_SET_BATT_TYPE,
 	COMM_BMS_GET_BATT_TYPE,
+
+	// DieBie Emulation for Metr 
+	// These are just here for private ENUMS
+	COMM_FW_VERSION_DIEBIE,
+	COM_GET_BMS_CELLS_DIEBIE,
+	COMM_GET_VALUES_DIEBIE,
 } COMM_PACKET_ID;
+
+typedef enum {
+	CAN_PACKET_BMS_STATUS_MAIN_IV = 30,
+	CAN_PACKET_BMS_STATUS_CELLVOLTAGE,
+	CAN_PACKET_BMS_STATUS_THROTTLE_CH_DISCH_BOOL,
+	CAN_PACKET_BMS_STATUS_TEMPERATURES,
+	CAN_PACKET_BMS_STATUS_AUX_IV_SAFETY_WATCHDOG,
+	CAN_PACKET_BMS_KEEP_ALIVE_SAFETY,
+} COM_DIEBIE_COMMAND;
 
 class bms_can
 {
@@ -356,6 +379,8 @@ private:
 	static void can_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int len, uint8_t send);
 	static void commands_process_packet(unsigned char *data, unsigned int len);
     static void send_packet_wrapper(unsigned char *data, unsigned int len);
+	static void commands_send_packet(unsigned char *data, unsigned int len);
+
 	// Private variables
 	static TaskHandle_t can_read_task_handle;
 	static TaskHandle_t can_process_task_handle;
@@ -392,6 +417,7 @@ private:
 	static bool bms_if_is_balancing();
 	static bool bms_if_is_balancing_cell(int cell);
 	static float bms_if_get_v_cell_min();
+	static float bms_if_get_v_cell_avg();
 	static float bms_if_get_v_cell_max();
 	static float bms_if_get_humidity_sensor_temp();
 	static float bms_if_get_humitidy();

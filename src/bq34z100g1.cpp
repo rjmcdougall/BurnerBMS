@@ -940,3 +940,75 @@ uint16_t BQ34Z100G1::q_max_time()
 {
     return read_register(0x74, 2);
 }
+
+
+
+std::map<std::string, int> BQ34Z100G1::getDiagData()
+{
+    std::map<std::string, int> diagData;
+
+    diagData.insert({"hw_version", hw_version()});
+    diagData.insert({"fw_version", fw_version()});
+    diagData.insert({"device_type", device_type()});
+    diagData.insert({"chem_id", chem_id()});
+    diagData.insert({"control_status", control_status()});
+    diagData.insert({"state_of_charge", state_of_charge()});
+    diagData.insert({"state_of_charge_max_error", state_of_charge_max_error()});
+    diagData.insert({"remaining_capacity", remaining_capacity()});
+    diagData.insert({"full_charge_capacity", full_charge_capacity()});
+    diagData.insert({"voltage", voltage()});
+    diagData.insert({"average_current", average_current()});
+    diagData.insert({"flags", flags()});
+    diagData.insert({"flags_b", flags_b()});
+    diagData.insert({"current", current()});
+    diagData.insert({"average_time_to_empty", average_time_to_empty()});
+    diagData.insert({"average_time_to_full", average_time_to_full()});
+    diagData.insert({"passed_charge", passed_charge()});
+    diagData.insert({"do_d0_time", do_d0_time()});
+    diagData.insert({"available_energy", available_energy()});
+    diagData.insert({"average_power", average_power()});
+    diagData.insert({"serial_number", serial_number()});
+    diagData.insert({"internal_temperature", internal_temperature()});
+    diagData.insert({"cycle_count", cycle_count()});
+    diagData.insert({"state_of_health", state_of_health()});
+    diagData.insert({"charge_voltage", charge_voltage()});
+    diagData.insert({"charge_current", charge_current()});
+    diagData.insert({"design_capacity", design_capacity()});
+    diagData.insert({"grid_number", grid_number()});
+    diagData.insert({"dod_at_eoc", dod_at_eoc()});
+    diagData.insert({"q_start", q_start()});
+    diagData.insert({"true_fcc", true_fcc()});
+    diagData.insert({"state_time", state_time()});
+    diagData.insert({"q_max_passed_q", (int16_t)q_max_passed_q()});
+    diagData.insert({"dod_0", dod_0()});
+    diagData.insert({"q_max_dod_0", q_max_dod_0()});
+    diagData.insert({"q_max_time", q_max_time()});
+
+    control_status_t cs;
+    cs.raw = control_status();
+
+    diagData.insert({"cs_qen", (int)cs.bits.QEN});
+    diagData.insert({"cs_vok", (int)cs.bits.VOK});
+    diagData.insert({"cs_rup_dis", (int)cs.bits.RUP_DIS});
+    diagData.insert({"cs_ldmd", (int)cs.bits.LDMD});
+    diagData.insert({"cs_sleep", (int)cs.bits.SLEEP});
+    diagData.insert({"cs_fullsleep", (int)cs.bits.FULLSLEEP});
+    diagData.insert({"cs_csv", (int)cs.bits.CSV});
+    diagData.insert({"cs_bca", (int)cs.bits.BCA});
+    diagData.insert({"cs_calen", (int)cs.bits.CALEN});
+    diagData.insert({"cs_ss", (int)cs.bits.SS});
+    diagData.insert({"cs_fas", (int)cs.bits.SS});
+
+    flags_a_t flags_a;
+    flags_a.raw = flags();
+    diagData.insert({"fa_ocvtaken", (int)flags_a.bits.OCVTAKEN});
+    diagData.insert({"fa_chg", (int)flags_a.bits.CHG});
+    diagData.insert({"fa_dsg", (int)flags_a.bits.DSG});
+
+    learned_status_t learned_sts;
+    learned_sts.raw = learned_status();
+    diagData.insert({"learned_cf", (int)learned_sts.bits.CF});
+    diagData.insert({"learned_iten", (int)learned_sts.bits.ITEN});
+
+    return diagData;
+}

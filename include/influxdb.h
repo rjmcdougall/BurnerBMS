@@ -6,6 +6,7 @@
 #include "burner_bms.h"
 
 void influxEvent();
+void influxEventDiag();
 
 extern bool wifi_isconnected;
 

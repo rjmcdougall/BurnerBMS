@@ -3,6 +3,8 @@
 
 static constexpr const char *const TAG = "influxdb";
 
+static constexpr const char *const boardName = "baja";
+
 #include "influxdb.h"
 #include "string_utils.h"
 #include <esp_http_client.h>
@@ -109,18 +111,15 @@ void influxEvent()
         return;
     }
 
-    //    esp_http_client_config_t config = {};
-    //    esp_http_client_handle_t http_client;
     HTTPClient httpInflux;
     int httpCode = 0;
 
-    //    HttpClient http_client;
     std::string authtoken;
     std::string url;
     std::string bms_data;
     bms_data.reserve(768);
 
-    std::string deviceName = "baja";
+    std::string deviceName = boardName;
     BLog_d(TAG, "Send Influxdb data - wifi mac %s", deviceName.c_str());
     std::string preamble = std::string("pack,board=").append(deviceName).append(" ");
     std::string voltage = std::string("voltage=").append(std::to_string(bms.getVoltageMv() / 1000.0)).append(",");
@@ -158,7 +157,79 @@ void influxEvent()
 
     bms_data.shrink_to_fit();
 
-    //  BLog_d(TAG, "%s", module_data.c_str());
+    // If we did not generate any module data we can exit early, although this should never happen.
+    if (bms_data.empty() || bms_data.length() == 0)
+    {
+        BLog_i(TAG, "No module data to send to InfluxDB");
+        return;
+    }
+
+    // Show URL we are logging to...
+    BLog_d(TAG, "URL %s", INFLUXDB_URL);
+
+    url.reserve(sizeof(INFLUXDB_URL) + sizeof(INFLUXDB_ORG) + sizeof(INFLUXDB_BUCKET));
+    url.append(INFLUXDB_URL);
+    url.append("?org=").append(url_encode(INFLUXDB_ORG));
+    url.append("&bucket=").append(url_encode(INFLUXDB_BUCKET));
+    url.append("&precision=s");
+    url.shrink_to_fit();
+
+    // Submit POST request via HTTP
+    httpInflux.begin(url.c_str());
+    httpInflux.addHeader(F("Content-Type"), F("text/plain"));
+
+    httpInflux.addHeader("Authorization", "Token " + String(INFLUXDB_TOKEN));
+    httpCode = httpInflux.POST(bms_data.c_str());
+    BLog_d(TAG, "Post: %s", bms_data.c_str());
+    BLog_d(TAG, "Influx [HTTPS] POST...  Code: %d\n", httpCode);
+    httpInflux.end();
+}
+
+// Generates and send module data to InfluxDB.
+void influxEventDiag()
+{
+    if (!wifi_isconnected)
+    {
+        BLog_e(TAG, "Influx enabled, but WIFI not connected");
+        return;
+    }
+
+    HTTPClient httpInflux;
+    int httpCode = 0;
+
+    std::string authtoken;
+    std::string url;
+    std::string bms_data;
+    bms_data.reserve(768);
+    std::map<std::string, int> diagData;
+
+    diagData = bms.getBqzDiagData();
+
+    if (diagData.size() == 0)
+    {
+        BLog_d(TAG, "no diag data to send");
+        return;
+    }
+
+    std::string deviceName = boardName;
+    BLog_d(TAG, "Send Influxdb data - wifi mac %s", deviceName.c_str());
+    std::string preamble = std::string("bqz,board=").append(deviceName).append(" ");
+
+    bms_data.append(preamble);
+    auto it = diagData.begin();
+
+    for (const auto &[key, value] : diagData)
+    {
+        BLog_d(TAG, "key %s value %d ", key, value);
+        bms_data.append(key).append("=").append(std::to_string(value));
+        if (std::next(it) != diagData.end())
+        {
+            bms_data.append(",");
+        }
+        it = std::next(it);
+    }
+    bms_data.append("\n");
+    bms_data.shrink_to_fit();
 
     // If we did not generate any module data we can exit early, although this should never happen.
     if (bms_data.empty() || bms_data.length() == 0)
@@ -176,27 +247,6 @@ void influxEvent()
     url.append("&bucket=").append(url_encode(INFLUXDB_BUCKET));
     url.append("&precision=s");
     url.shrink_to_fit();
-    //      String influxClient = String(INFLUXDB_URL) + "/api/v2/write?org=" + urlEncode(INFLUXDB_ORG) + "&bucket=" + INFLUXDB_BUCKET + "&precision=s";
-
-    //    config.event_handler = http_event_handler;
-    //    config.method = HTTP_METHOD_POST;
-    //    config.url = url.c_str();
-    //    config.timeout_ms = 5000;
-    // We are not going to re-use this in the next few seconds
-    //   config.keep_alive_enable = false;
-    //   config.skip_cert_common_name_check = true;
-
-    // WiFiClientSecure wifiClientSec WiFiClientSecure;
-
-#ifndef ARDUINO_ESP32_RELEASE_1_0_4
-    // This works only in ESP32 SDK 1.0.5 and higher
-//      wifiClientSec->setInsecure();
-#endif
-    //    wifiClientSec.connect(url.c_str(), 443))
-
-    // Initialize http client and prepare to process the request.
-    // http_client = esp_http_client_init(&config);
-    //    http_client = HttpClient(wifiClientSec);
 
     // Submit POST request via HTTP
     httpInflux.begin(url.c_str());
@@ -207,48 +257,4 @@ void influxEvent()
     BLog_d(TAG, "Post: %s", bms_data.c_str());
     BLog_d(TAG, "Influx [HTTPS] POST...  Code: %d\n", httpCode);
     httpInflux.end();
-#ifdef ESP_HTTP
-
-    if (http_client == nullptr)
-    {
-        BLog_d(TAG, "esp_http_client_init return NULL");
-    }
-    else
-    {
-        // Set authorization header
-        authtoken.reserve(sizeof(INFLUXDB_TOKEN));
-        authtoken.append("Token ").append(INFLUXDB_TOKEN);
-        authtoken.shrink_to_fit();
-        esp_http_client_set_header(http_client, "Authorization", authtoken.c_str());
-
-        // Set Content-Encoding for the post payload
-        esp_http_client_set_header(http_client, "Content-Type", "text/plain");
-
-        // Add post data to the client.
-        ESP_ERROR_CHECK(esp_http_client_set_post_field(http_client, bms_data.c_str(), bms_data.length()));
-
-        // Process the http request.
-        esp_err_t err = esp_http_client_perform(http_client);
-
-        if (err == ESP_OK)
-        {
-            int status_code = esp_http_client_get_status_code(http_client);
-            if (status_code != 204)
-            {
-                BLog_e(TAG, "HTTP error returned, status code = %d", status_code);
-                BLog_d(TAG, "Content_length = %d", esp_http_client_get_content_length(http_client));
-            }
-            else
-            {
-                BLog_i(TAG, "Successful");
-            }
-        }
-        else
-        {
-            BLog_e(TAG, "Error perform http request %s", esp_err_to_name(err));
-        }
-        // Cleanup the http client.
-        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_http_client_cleanup(http_client));
-    }
-#endif
 }

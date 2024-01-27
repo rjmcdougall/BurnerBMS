@@ -11,6 +11,65 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <map>
+
+typedef union control_status_flags
+{
+    struct
+    {
+        uint16_t QEN : 1;
+        uint16_t VOK : 1;
+        uint16_t RUP_DIS : 1;
+        uint16_t LDMD : 1;
+        uint16_t SLEEP : 1;
+        uint16_t FULLSLEEP : 1;
+        uint16_t RSVD1 : 1;
+        uint16_t RSVD2 : 1;
+        uint16_t RSVD3 : 1;
+        uint16_t CSV : 1;
+        uint16_t BCA : 1;
+        uint16_t CCA : 1;
+        uint16_t CALEN : 1;
+        uint16_t SS : 1;
+        uint16_t FAS : 1;
+    } bits;
+    uint16_t raw;
+} control_status_t;
+
+typedef union flags_a
+{
+    struct
+    {
+        uint16_t DSG : 1;
+        uint16_t SOCF : 1;
+        uint16_t SOC1 : 1;
+        uint16_t RSVD1 : 1;
+        uint16_t CF : 1;
+        uint16_t RSVD2 : 1;
+        uint16_t RSVD3 : 1;
+        uint16_t OCVTAKEN : 1;
+        uint16_t CHG : 1;
+        uint16_t FC : 1;
+        uint16_t XCHG : 1;
+        uint16_t CHG_INH : 1;
+        uint16_t BATLOW : 1;
+        uint16_t BATHI : 1;
+        uint16_t OTD : 1;
+        uint16_t OTC : 1;
+    } bits;
+    uint16_t raw;
+} flags_a_t;
+
+typedef union learned_status
+{
+    struct
+    {
+        uint8_t CF : 2;
+        uint8_t ITEN : 1;
+        uint8_t QMAX : 1;
+    } bits;
+    uint8_t raw;
+} learned_status_t;
 
 /*
  1. Update design capacity.
@@ -118,6 +177,8 @@ public:
     uint16_t dod_0();
     uint16_t q_max_dod_0();
     uint16_t q_max_time();
+
+    std::map<std::string, int> getDiagData();
 };
 
 #endif /* bq34z100g1_hpp */

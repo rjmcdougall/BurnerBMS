@@ -34,6 +34,7 @@ uint32_t BMS::currentMa;
 uint32_t BMS::currentInstantMa;
 uint32_t BMS::chargeVoltage;
 bool BMS::isChargingState = false;
+std::map<std::string, int> BMS::bqzDiagData;
 
 BMS::BMS()
 {
@@ -52,6 +53,7 @@ void BMS::init()
     Wire1.setClock(100000);
     BLog_d(TAG, "Initializing BQ76952...");
     bq.begin();
+    bqz.it_enable();
 }
 
 void BMS::update()
@@ -188,6 +190,11 @@ bool BMS::isBalancing()
     return balancing;
 }
 
+std::map<std::string, int> BMS::getBqzDiagData() {
+    return bqzDiagData;
+}
+
+
 void BMS::bqUpdate()
 {
     BLog_d(TAG, "update");
@@ -238,5 +245,6 @@ void BMS::bqUpdate()
     currentMa = bqz.average_current() * BMS::currentMultiplier;
     currentInstantMa = bqz.current() * BMS::currentMultiplier;
     chargeVoltage = (unsigned int)bqz.charge_voltage();
-    bool isChargingState = bq.isCharging();
+    isChargingState = bq.isCharging();
+    bqzDiagData = bqz.getDiagData();
 }

@@ -77,6 +77,7 @@ void loop()
   if ((loop_cnt % 30) == 0) {
     BLog_d(TAG, "influx...");
     influxEvent();
+    influxEventDiag();
   }
   loop_cnt++;
   vTaskDelay(pdMS_TO_TICKS(1000));
